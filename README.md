@@ -12,6 +12,13 @@ This README file is written by Limeng Pu.
 
 An example of binding grid generated, pdb ID: 1a2sA, atom type: C.ar. Red --> low potentials while Blue --> high potentials.
 
+# Installation
+Install in conda with:
+
+```
+conda env create -f environment.yaml
+```
+
 # Prerequisites
 
 1. Linux (DFIRE potential calculation supports only Linux)
