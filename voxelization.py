@@ -24,8 +24,8 @@ def site_voxelization(site, voxel_length):
     coords = site[:,0:3]
     potentials = site[:,3:None]
     voxel_length = 32
-    voxel_start = -voxel_length/2 + 1
-    voxel_end = voxel_length/2
+    voxel_start = int(-voxel_length/2 + 1)
+    voxel_end = int(voxel_length/2)
     voxel = np.zeros( shape = (14, voxel_length, voxel_length, voxel_length),
         dtype = np.float64) 
     cnt = 0
@@ -140,11 +140,11 @@ class Vox3DBuilder(object):
         ppdb.to_pdb(output_trans_pdb_path)
         output_trans_mol2_path = output_trans_pdb_path[0:-4] + '.mol2'
         print('Output the binding pocket aligned mol2 file to: ' + output_trans_mol2_path)
-        mol = pybel.readfile('pdb',output_trans_pdb_path).next()
-        mol.write('mol2',output_trans_mol2_path, overwrite = True)    
+        #mol = pybel.readfile('pdb',output_trans_pdb_path).next()
+        #mol.write('mol2',output_trans_mol2_path, overwrite = True)
         # Grid generation and DFIRE potential calculation
         print('...Generating pocket grid representation')
-        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_mol2_path, r, N)
+        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_pdb_path, r, N)
         print('...Generating pocket voxel representation')
         pocket_voxel = site_voxelization(pocket_grid, N + 1)
         pocket_voxel = np.expand_dims(pocket_voxel, axis = 0)

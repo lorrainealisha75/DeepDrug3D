@@ -101,16 +101,18 @@ def single_potEnergy(loc1, ld_type_list, mol2_in_string, protein_file):
     append = Es.append
     r1 = replace_coord(mol2_in_string, temp_loc)
     random_string = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(11))
-    temp_filename = '/dev/shm/' + random_string +'.mol2' # TODO: this controls the place to generate the temporary mol2 file
+    temp_filename = '/tmp/' + random_string +'.mol2' # TODO: this controls the place to generate the temporary mol2 file
     for item in ld_type_list:
         rrr = replace_type(r1, item)
         f = open(temp_filename,'w')
         f.write(rrr)
         f.close()
-        child = subprocess.Popen(['./dligand-linux', temp_filename, protein_file],stdout=subprocess.PIPE)
+        child = subprocess.Popen(['dligand2', '-L', temp_filename, '-P', protein_file],stdout=subprocess.PIPE)
+        print(['dligand2', '-L', temp_filename, '-P', protein_file])
         child.wait()
         out = child.communicate()
         a = out[0].replace('\n','')
+        print(out)
         b = float(a)
         append(b)
     Es = np.array(Es)

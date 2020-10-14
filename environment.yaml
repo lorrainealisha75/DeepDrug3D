@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - biopandas
+  - dligand2
   - numpy
   - openbabel=2.*
   - pandas
