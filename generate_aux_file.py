@@ -1,4 +1,5 @@
 from biopandas.pdb import PandasPdb
+import json
 
 
 def get_binding_site_centre(complex, ligand_name):
@@ -27,16 +28,12 @@ def get_ligand_residue_id(pl_complex, ligand_name):
     return residue_id.drop_duplicates().tolist()
 
 
-def create_aux_file(ligand, ids, bind_site_centre):
-    f = open(ligand + '_aux.txt', 'w')
-    f.write('BindingResidueIDs:')
-    for id in ids:
-        f.write(str(id)+' ')
-    f.write('\n')
-    f.write('BindingSiteCenter:')
-    for coord in bind_site_centre:
-        f.write(str(coord)+' ')
-    f.close()
+def write_to_aux_file(ligand, ids, bind_site_centre):
+    data = {}
+    data["residue_ids"] = ids
+    data["binding_site_coords"] = {"x": bind_site_centre[0], "y": bind_site_centre[1], "z": bind_site_centre[2]}
+    with open(ligand + '_aux.txt', 'w') as outfile:
+        json.dump(data, outfile)
 
 
 def main():
@@ -55,7 +52,7 @@ def main():
 
     all_ids = binding_residue_ids + ligand_id
 
-    create_aux_file(ligand_name, all_ids, (x, y, z))
+    write_to_aux_file(ligand_name, all_ids, (x, y, z))
 
 
 if __name__ == "__main__":
