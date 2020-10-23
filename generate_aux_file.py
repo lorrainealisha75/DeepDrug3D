@@ -1,6 +1,6 @@
 from biopandas.pdb import PandasPdb
 import json
-
+import argparse
 
 def get_binding_site_centre(complex, ligand_name):
     hetatm = complex.df['HETATM']
@@ -37,9 +37,14 @@ def write_to_aux_file(ligand, ids, bind_site_centre):
 
 
 def main():
-    pdb_file_path = "data/2yki.pdb"
-    ligand_name = "YKI"
-    r = 6.0
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--pdb', required=True, help='PDB file path')
+    parser.add_argument('-l', '--ligand', required=True, help='Ligand name')
+    parser.add_argument('-r', '--radius', type=float, required=True, help='Radius in angstroms from ligand center')
+    args = parser.parse_args()
+    pdb_file_path = args.pdb
+    ligand_name = args.ligand
+    r = args.radius
 
     pl_complex = PandasPdb().read_pdb(pdb_file_path)
     x, y, z = get_binding_site_centre(pl_complex, ligand_name)

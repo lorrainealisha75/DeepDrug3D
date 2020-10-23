@@ -24,8 +24,8 @@ def site_voxelization(site, voxel_length):
     coords = site[:,0:3]
     potentials = site[:,3:None]
     voxel_length = 32
-    voxel_start = -voxel_length/2 + 1
-    voxel_end = voxel_length/2
+    voxel_start = int(-voxel_length/2 + 1)
+    voxel_end = int(voxel_length/2)
     voxel = np.zeros( shape = (14, voxel_length, voxel_length, voxel_length),
         dtype = np.float64) 
     cnt = 0
@@ -93,26 +93,31 @@ class Vox3DBuilder(object):
     """
     @staticmethod
     def voxelization(pdb_path, aux_input_path, r, N):
-        # Read the pdb file and the auxilary input file
+        # Read the pdb file
         ppdb = PandasPdb().read_pdb(pdb_path)
-        protein_df = ppdb.df['ATOM']
+        protein_all_atoms_df = ppdb.df['ATOM'] # dataframe with list of protein atoms
+        # unlike in the original implementation we want to exclude H atoms
+        protein_df = protein_all_atoms_df[protein_all_atoms_df['atom_name'].str[0] != 'H']
         content = []
+
+        # Read the aux file
         with open(aux_input_path) as in_strm:
             for line in in_strm.readlines():
                 l = line.replace('\n','')
                 idx = l.index(':')
                 content.append(l[idx+1:None])
         in_strm.close()
-        resi =  [int(x) for x in content[0].split(' ')]
-        if len(content[1]) != 0:
-            pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
-            pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
-            pocket_center = np.array([int(x) for x in content[1].split(' ')])
+        resi =  [int(x) for x in content[0].strip().split(' ')]  # list of residues bordering the ligand
+
+        pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
+        pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
+        if len(content[1]) != 0: # if center is provided
+            pocket_center = np.array([float(x) for x in content[1].strip().split(' ')])
         else:
             print('No center is provided')
-            pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
-            pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
-            pocket_center = np.mean(pocket_coords, axis = 0)
+            pocket_center = np.mean(pocket_coords, axis = 0) # calculate the average of pocket coords to find center
+
+        # Align coordinates along 1st PC and save as _trans files
         protein_coords = np.array([protein_df['x_coord'], protein_df['y_coord'], protein_df['z_coord']]).T
         pocket_coords = pocket_coords - pocket_center # center the pocket to 0,0,0
         protein_coords = protein_coords - pocket_center # center the protein according to the pocket center
@@ -138,15 +143,12 @@ class Vox3DBuilder(object):
         output_trans_pdb_path = aux_input_path[0:-4] + '_trans.pdb'
         print('Output the binding pocket aligned pdb file to: ' + output_trans_pdb_path)
         ppdb.to_pdb(output_trans_pdb_path)
-        output_trans_mol2_path = output_trans_pdb_path[0:-4] + '.mol2'
-        print('Output the binding pocket aligned mol2 file to: ' + output_trans_mol2_path)
-        mol = pybel.readfile('pdb',output_trans_pdb_path).next()
-        mol.write('mol2',output_trans_mol2_path, overwrite = True)    
+
         # Grid generation and DFIRE potential calculation
         print('...Generating pocket grid representation')
-        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_mol2_path, r, N)
+        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_pdb_path, r, N)
         print('...Generating pocket voxel representation')
         pocket_voxel = site_voxelization(pocket_grid, N + 1)
         pocket_voxel = np.expand_dims(pocket_voxel, axis = 0)
-#        np.save('voxel_rep', pocket_voxel)
+        np.save('voxel_rep', pocket_voxel)
         return pocket_voxel

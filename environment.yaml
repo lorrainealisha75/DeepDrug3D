@@ -1,0 +1,14 @@
+name: vxl
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - biopandas
+  - dligand2
+  - numpy
+  - openbabel=2.*
+  - pandas
+  - python=2.7.*
+  - scikit-learn
+  - scipy
