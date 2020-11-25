@@ -8,28 +8,31 @@ from __future__ import division
 
 import sys
 import os
-
-import numpy as np
 import json
+import argparse
+import numpy as np
 
 import pybel
 from biopandas.pdb import PandasPdb
+
 from binding_grid import Grid3DBuilder
 
+
+# from keras.models import load_model
 
 def site_voxelization(site, voxel_length):
     site = np.array(site, dtype=np.float64)
     coords = site[:, 0:3]
     potentials = site[:, 3:None]
     voxel_length = 32
-    voxel_start = -voxel_length / 2 + 1
-    voxel_end = voxel_length / 2
+    voxel_start = int(-voxel_length / 2 + 1)
+    voxel_end = int(voxel_length / 2)
     voxel = np.zeros(shape=(14, voxel_length, voxel_length, voxel_length),
                      dtype=np.float64)
     cnt = 0
-    for x in range(voxel_start, voxel_end + 1, 1):
-        for y in range(voxel_start, voxel_end + 1, 1):
-            for z in range(voxel_start, voxel_end + 1, 1):
+    for x in xrange(voxel_start, voxel_end + 1, 1):
+        for y in xrange(voxel_start, voxel_end + 1, 1):
+            for z in xrange(voxel_start, voxel_end + 1, 1):
                 temp_voxloc = [x, y, z]
                 distances = np.linalg.norm(coords - temp_voxloc, axis=1)
                 min_dist = np.min(distances)
@@ -96,10 +99,14 @@ class Vox3DBuilder(object):
 
     @staticmethod
     def voxelization(pdb_path, aux_input_path, r, N):
-        # Read the pdb file and the auxilary input file
+        # Read the pdb file
         ppdb = PandasPdb().read_pdb(pdb_path)
-        protein_df = ppdb.df['ATOM']
+        protein_all_atoms_df = ppdb.df['ATOM']  # dataframe with list of protein atoms
+        # unlike in the original implementation we want to exclude H atoms
+        protein_df = protein_all_atoms_df[protein_all_atoms_df['atom_name'].str[0] != 'H']
         content = []
+
+        # Read the aux file
         with open(aux_input_path) as json_file:
             data = json.load(json_file)
             content.append(data["residue_ids"])
@@ -115,6 +122,11 @@ class Vox3DBuilder(object):
             pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
             pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
             pocket_center = np.mean(pocket_coords, axis=0)
+
+        # Swap the 1st and 2nd position of the binding center as the y coord is always before the x
+        # coord in the aux_files  and this creates a problem when the pocket_coords and protein_coords
+        # are subtracted from the pocket_center
+        pocket_center[0], pocket_center[1] = pocket_center[1], pocket_center[0]
         protein_coords = np.array([protein_df['x_coord'], protein_df['y_coord'], protein_df['z_coord']]).T
         pocket_coords = pocket_coords - pocket_center  # center the pocket to 0,0,0
         protein_coords = protein_coords - pocket_center  # center the protein according to the pocket center
@@ -140,25 +152,33 @@ class Vox3DBuilder(object):
         output_trans_pdb_path = aux_input_path[0:-4] + '_trans.pdb'
         print('Output the binding pocket aligned pdb file to: ' + output_trans_pdb_path)
         ppdb.to_pdb(output_trans_pdb_path)
-        output_trans_mol2_path = output_trans_pdb_path[0:-4] + '.mol2'
-        print('Output the binding pocket aligned mol2 file to: ' + output_trans_mol2_path)
-        mol = pybel.readfile('pdb', output_trans_pdb_path).__next__()
-        mol.write('mol2', output_trans_mol2_path, overwrite=True)
+
         # Grid generation and DFIRE potential calculation
         print('...Generating pocket grid representation')
-        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_mol2_path, r, N)
+        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_pdb_path, r, N)
         print('...Generating pocket voxel representation')
         pocket_voxel = site_voxelization(pocket_grid, N + 1)
         pocket_voxel = np.expand_dims(pocket_voxel, axis=0)
-        #        np.save('voxel_rep', pocket_voxel)
+        np.save('voxel_rep', pocket_voxel)
         return pocket_voxel
 
 
 def main():
-    Vox3DBuilder.voxelization('data/2yki.pdb', 'YKI_aux.txt', 15, 31)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--protein', required=True, help='Protein PDB file path')
+    parser.add_argument('-a', '--aux_file', required=True, help='Auxillary file for the protein-ligand complex')
+    parser.add_argument('-r', '--radius', type=float, required=True, help='Radius of the spherical grid')
+    parser.add_argument('-n', '--number', type=int, required=True,
+                        help='The number of points along the dimension of the spherical grid')
+    args = parser.parse_args()
+
+    pdb_file_path = args.protein
+    aux_file = args.aux_file
+    radius = args.radius
+    number = args.number
+
+    Vox3DBuilder.voxelization(pdb_file_path, aux_file, radius, number)
 
 
 if __name__ == "__main__":
     main()
-
-
