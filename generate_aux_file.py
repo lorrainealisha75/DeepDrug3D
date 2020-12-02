@@ -5,6 +5,12 @@ import argparse
 def get_binding_site_centre(complex, ligand_name):
     hetatm = complex.df['HETATM']
     ligand = hetatm.loc[hetatm['residue_name'] == ligand_name]
+
+    # If the ligand cannot be found in the pdb file, return the mean
+    # coordinates of all other ligand molecules other than HOH (water)
+    if len(ligand.index) == 0:
+        ligand = hetatm.loc[hetatm['residue_name'] != 'HOH']
+
     x = ligand['x_coord']
     y = ligand['y_coord']
     z = ligand['z_coord']
