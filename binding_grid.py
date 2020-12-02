@@ -7,11 +7,6 @@ Generate the binding grid and calculate the DFIRE potentials
 
 import numpy as np
 import scipy.spatial as sp
-import subprocess
-import os
-
-import random
-import string
 
 import time
 
@@ -35,6 +30,8 @@ def sGrid(center, r, N):
     mask = tree.query_ball_point(center,1.01*r)
     points_in_sphere = data[mask]
     return points_in_sphere
+
+
 # test if a point is inside a convex hull
 def in_hull(p, hull):
     if not isinstance(hull,Delaunay):
@@ -71,91 +68,50 @@ def site_refine(site,protein_coords):
             final_label[k] = 1
         else:
             continue
-    final_label = np.array(final_label, dtype = bool)
+    final_label = np.array(final_label, dtype=bool)
     # potential energy normalization
     iso_site = hull_site[final_label]
     return iso_site
-""" 
-The following functions create a new dummy mol2 file for the DFIRE calculation 
-"""
-# replace the coordinates in the original string with new coordinates
-def replace_coord(original_string, new_coord):
-    temp = '{:>8}  {:>8}  {:>8}'.format(new_coord[0],new_coord[1],new_coord[2])
-    new_string = original_string.replace(' 50.0000   51.0000   52.0000',temp)
-    return new_string
-# replace the atom type in the original string with the new atom type
-def replace_type(original_string, new_type):
-    temp = '{:6}'.format(new_type)
-    new_string = original_string.replace('N.3   ',temp)
-    return new_string
-# replace the residue type with new residue type
-def replace_res(original_string, new_res):
-    temp = '{:6}'.format(new_res)
-    new_string = original_string.replace('VAL1  ',temp)
-    return new_string
-"""
-The following calculates the DFIRE potentials using the dligand program proivded in the DFIRE paper
-"""
-# UISNG THE DFIRE FUNCTION
-def single_potEnergy(loc1, ld_type_list, mol2_in_string, protein_file):
-    temp_loc = loc1.round(4)
-    Es = []
-    append = Es.append
-    r1 = replace_coord(mol2_in_string, temp_loc)
-    random_string = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(11))
-    temp_filename = 'data/' + random_string +'.mol2' # TODO: this controls the place to generate the temporary mol2 file
-    for item in ld_type_list:
-        rrr = replace_type(r1, item)
-        f = open(temp_filename,'w')
-        f.write(rrr)
-        f.close()
-        child = subprocess.Popen(['data/dligand-linux', temp_filename, protein_file],stdout=subprocess.PIPE)
-        child.wait()
-        out = child.communicate()
-        a = out[0].replace('\n','')
-        b = float(a)
-        append(b)
-    Es = np.array(Es)
-    os.remove(temp_filename)
-    return Es
 
 
-def minmax_scale(X, axis = 0):
-    X_std = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
-    X_scaled = X_std * (X.max(axis=0) - X.min(axis=0)) + X.min(axis=0)
-    return X_scaled
+# Calculate nearest amino acid for each grid point in the refined binding site
+def assign_amino_acid(site, selected_coords):
+    amino_acid = selected_coords[['residue_number', 'residue_name']].drop_duplicates()
+    amino_acid_list = []
+    ss = time.time()
+    for coordinate in site:
+        distances = np.linalg.norm(selected_coords[['x_coord', 'y_coord', 'z_coord']] - coordinate, axis=1)
+
+        # Distance of a coordinate in the binding site to all the residues in the auxiliary file
+        selected_coords['distance_to_binding_residues'] = distances
+
+        # Group by residue number and get minimum distance
+        min_dist = selected_coords.groupby(['residue_number'])['distance_to_binding_residues'].min()
+
+        # Get the 3-letter amino acid id corresponding to the residue with the least distance
+        amino_acid_list.append(amino_acid.loc[amino_acid['residue_number'] == min_dist.idxmin()].iat[0, 1])
+
+    print('\nThe total time of computation is: ' + str(time.time() - ss) + ' seconds')
+    return amino_acid_list
 
 
-def potEnergy(binding_site, mol2_in_path, protein_file):
-    ld_type_list = ['C.2','C.3','C.ar','F','N.am','N.2','O.co2','N.ar','S.3','O.2','O.3','N.4','P.3','N.pl3']
-    total_potE = {'loc':[],'potE':[]}
-    mol2_in_file = open(mol2_in_path)
-    mol2_in_string = mol2_in_file.read()
-    potEs = np.array([single_potEnergy(loc1, ld_type_list, mol2_in_string, protein_file) for loc1 in binding_site])
-    total_potE['potE'] = minmax_scale(potEs, axis = 0)
-    total_potE['loc'] = binding_site
-    return total_potE
 # main function
 class Grid3DBuilder(object):
     """ Given an align protein, generate the binding grid
     and calculate the DFIRE potentials """
     @staticmethod
-    def build(protein_coords, protein_path, r, N):
+    def build(protein_coords, selected_coords, r, N):
         """
         Input: protein coordinates, path to the pdb file of the protein, radius, number of points along the radius.
         Output: dataframe of the binding grid, including coordinates and potentials for different atom types.
         """
         print('The radius of the binding grid is: ' + str(r))
-        print('The number of points along the diameter is: ' + str(N))
+        print('\nThe number of points along the diameter is: ' + str(N))
         binding_site = sGrid(np.array([0,0,0]),r,N)
         new_site = site_refine(binding_site, protein_coords)
-        print('The number of points in the refined binding set is ' + str(len(new_site)))
-        ss = time.time()
-        print('... Computation of the binding site potential energy started ...')
-        total_potE = potEnergy(new_site, 'data/dummy_mol2.mol2', protein_path)
-        print('The total time of binding site potential energy computation is: ' + str(time.time() - ss) + ' seconds')
-        df1 = pd.DataFrame(total_potE['loc'], columns = ['x','y','z'])
-        df2 = pd.DataFrame(total_potE['potE'], columns = ['C.2','C.3','C.ar','F','N.am','N.2','O.co2','N.ar','S.3','O.2','O.3','N.4','P.3','N.pl3'])
-        frames = [df1,df2]
-        df = pd.concat(frames, axis = 1)
-        return  df
+        amino_acid_list = assign_amino_acid(new_site, selected_coords)
+        binding_site = pd.DataFrame(data=new_site, columns=['x', 'y', 'z'])
+        binding_site['nearest_amino_acid'] = amino_acid_list
+        print('\nThe number of points in the refined binding set is ' + str(len(new_site)))
+
+        return binding_site[['x', 'y', 'z', 'nearest_amino_acid']]

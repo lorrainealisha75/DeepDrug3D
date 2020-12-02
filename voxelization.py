@@ -6,10 +6,10 @@ This script converts the pdb file to the voxel representation.
 """
 from __future__ import division
 
-import sys
-import os
 import json
 import argparse
+import time
+import ntpath
 import numpy as np
 
 import pybel
@@ -21,27 +21,48 @@ from binding_grid import Grid3DBuilder
 # from keras.models import load_model
 
 def site_voxelization(site, voxel_length):
-    site = np.array(site, dtype=np.float64)
-    coords = site[:, 0:3]
-    potentials = site[:, 3:None]
+    amino_acid_dict = {
+        "ALA": 1,
+        "ARG": 2,
+        "ASN": 3,
+        "ASP": 4,
+        "CYS": 5,
+        "GLN": 6,
+        "GLU": 7,
+        "GLY": 8,
+        "HIS": 9,
+        "ILE": 10,
+        "LEU": 11,
+        "LYS": 12,
+        "MET": 13,
+        "PHE": 14,
+        "PRO": 15,
+        "SER": 16,
+        "THR": 17,
+        "TRP": 18,
+        "TYR": 19,
+        "VAL": 20
+    }
+
+    coords = np.array(site.iloc[:, 0:3], dtype=np.float64)
+    amino_acid = site.iloc[:, 3:None]['nearest_amino_acid'].to_list()
     voxel_length = 32
     voxel_start = int(-voxel_length / 2 + 1)
     voxel_end = int(voxel_length / 2)
-    voxel = np.zeros(shape=(14, voxel_length, voxel_length, voxel_length),
-                     dtype=np.float64)
-    cnt = 0
-    for x in xrange(voxel_start, voxel_end + 1, 1):
-        for y in xrange(voxel_start, voxel_end + 1, 1):
-            for z in xrange(voxel_start, voxel_end + 1, 1):
+    voxel = np.zeros(shape=(1, voxel_length, voxel_length, voxel_length),
+                     dtype=np.int64)
+    ss = time.time()
+    for x in range(voxel_start, voxel_end + 1, 1):
+        for y in range(voxel_start, voxel_end + 1, 1):
+            for z in range(voxel_start, voxel_end + 1, 1):
                 temp_voxloc = [x, y, z]
                 distances = np.linalg.norm(coords - temp_voxloc, axis=1)
                 min_dist = np.min(distances)
                 index = np.where(distances == min_dist)
                 if min_dist < 0.01:
-                    voxel[:, x - voxel_start, y - voxel_start, z - voxel_start] = potentials[index, :]
-                    cnt += 1
-                else:
-                    voxel[:, x - voxel_start, y - voxel_start, z - voxel_start] = np.ones((14,))
+                    voxel[:, x - voxel_start, y - voxel_start, z - voxel_start] = amino_acid_dict[amino_acid[index[0][0]]]
+
+    print('\nThe total time for voxelization is: ' + str(time.time() - ss) + ' seconds')
     return voxel
 
 
@@ -91,6 +112,23 @@ def vrrotvec2mat(r):
     return m
 
 
+# Create a DF of the transformed protein coordinates based on the residue number in the auxillary file
+def select_protein_coords(path_to_transformed_pdb, residue_ids):
+    ppdb = PandasPdb().read_pdb(path_to_transformed_pdb)
+    protein_all_atoms_df = ppdb.df['ATOM']  # dataframe with list of protein atoms
+    # we want to exclude the main chain atoms from the amino acid
+    protein_df = protein_all_atoms_df.loc[(protein_all_atoms_df['atom_name'] != 'H') &
+                                          (protein_all_atoms_df['atom_name'] != 'N') &
+                                          (protein_all_atoms_df['atom_name'] != 'CA') &
+                                          (protein_all_atoms_df['atom_name'] != 'C') &
+                                          (protein_all_atoms_df['atom_name'] != 'O')]
+
+    # Select the amino acid molecules whose residue ids are present in the auxiliary file
+    selected_protein_df = protein_df[protein_df['residue_number'].isin(residue_ids)]
+    return selected_protein_df
+
+
+
 class Vox3DBuilder(object):
     """
     This class convert the pdb file to the voxel representation for the input
@@ -99,6 +137,11 @@ class Vox3DBuilder(object):
 
     @staticmethod
     def voxelization(pdb_path, aux_input_path, r, N):
+        # Name of the protein (always 4-letter)
+        protein_name = ntpath.basename(pdb_path)[0:4]
+        # Name of the ligand (3-letter code)
+        ligand_name = ntpath.basename(aux_input_path)[5:8]
+
         # Read the pdb file
         ppdb = PandasPdb().read_pdb(pdb_path)
         protein_all_atoms_df = ppdb.df['ATOM']  # dataframe with list of protein atoms
@@ -112,21 +155,17 @@ class Vox3DBuilder(object):
             content.append(data["residue_ids"])
             content.append(data["binding_site_coords"])
         json_file.close()
-        resi = content[0]
+        residue_ids = content[0]
         if len(content[1]) != 0:
-            pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
+            pocket_df = protein_df[protein_df['residue_number'].isin(residue_ids)]
             pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
-            pocket_center = list(content[1].values())
+            pocket_center = list([content[1]["x"], content[1]["y"], content[1]["z"]])
         else:
             print('No center is provided')
-            pocket_df = protein_df[protein_df['residue_number'].isin(resi)]
+            pocket_df = protein_df[protein_df['residue_number'].isin(residue_ids)]
             pocket_coords = np.array([pocket_df['x_coord'], pocket_df['y_coord'], pocket_df['z_coord']]).T
             pocket_center = np.mean(pocket_coords, axis=0)
 
-        # Swap the 1st and 2nd position of the binding center as the y coord is always before the x
-        # coord in the aux_files  and this creates a problem when the pocket_coords and protein_coords
-        # are subtracted from the pocket_center
-        pocket_center[0], pocket_center[1] = pocket_center[1], pocket_center[0]
         protein_coords = np.array([protein_df['x_coord'], protein_df['y_coord'], protein_df['z_coord']]).T
         pocket_coords = pocket_coords - pocket_center  # center the pocket to 0,0,0
         protein_coords = protein_coords - pocket_center  # center the protein according to the pocket center
@@ -150,16 +189,20 @@ class Vox3DBuilder(object):
         ppdb.df['ATOM']['y_coord'] = transformed_coords[:, 1]
         ppdb.df['ATOM']['z_coord'] = transformed_coords[:, 2]
         output_trans_pdb_path = aux_input_path[0:-4] + '_trans.pdb'
-        print('Output the binding pocket aligned pdb file to: ' + output_trans_pdb_path)
+
+        print('\nOutput the binding pocket aligned pdb file to: ' + output_trans_pdb_path)
         ppdb.to_pdb(output_trans_pdb_path)
 
+        selected_coords = select_protein_coords(output_trans_pdb_path, residue_ids)
+
         # Grid generation and DFIRE potential calculation
-        print('...Generating pocket grid representation')
-        pocket_grid = Grid3DBuilder.build(transformed_coords, output_trans_pdb_path, r, N)
-        print('...Generating pocket voxel representation')
+        print('\n...Generating pocket grid representation\n')
+        pocket_grid = Grid3DBuilder.build(transformed_coords, selected_coords, r, N)
+
+        print('\n...Generating pocket voxel representation')
         pocket_voxel = site_voxelization(pocket_grid, N + 1)
         pocket_voxel = np.expand_dims(pocket_voxel, axis=0)
-        np.save('voxel_rep', pocket_voxel)
+        np.save('voxel_'+protein_name+'_'+ligand_name, pocket_voxel)
         return pocket_voxel
 
 
