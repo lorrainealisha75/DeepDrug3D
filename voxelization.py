@@ -12,6 +12,9 @@ import time
 import ntpath
 import numpy as np
 
+import matplotlib.pyplot as plt
+from matplotlib import cm
+
 import pybel
 from biopandas.pdb import PandasPdb
 
@@ -49,7 +52,7 @@ def site_voxelization(site, voxel_length):
     voxel_length = 32
     voxel_start = int(-voxel_length / 2 + 1)
     voxel_end = int(voxel_length / 2)
-    voxel = np.zeros(shape=(1, voxel_length, voxel_length, voxel_length),
+    voxel = np.zeros(shape=(voxel_length, voxel_length, voxel_length),
                      dtype=np.int64)
     ss = time.time()
     for x in range(voxel_start, voxel_end + 1, 1):
@@ -60,7 +63,7 @@ def site_voxelization(site, voxel_length):
                 min_dist = np.min(distances)
                 index = np.where(distances == min_dist)
                 if min_dist < 0.01:
-                    voxel[:, x - voxel_start, y - voxel_start, z - voxel_start] = amino_acid_dict[amino_acid[index[0][0]]]
+                    voxel[x - voxel_start, y - voxel_start, z - voxel_start] = amino_acid_dict[amino_acid[index[0][0]]]
 
     print('\nThe total time for voxelization is: ' + str(time.time() - ss) + ' seconds')
     return voxel
@@ -128,6 +131,16 @@ def select_protein_coords(path_to_transformed_pdb, residue_ids):
     return selected_protein_df
 
 
+def visualize_voxel(voxel):
+    voxel = voxel[0]
+    cmap = cm.get_cmap('tab20', 21)
+    for sl in range(voxel.shape[0]):
+        fig, axs = plt.subplots(1, 1, figsize=(6, 3), constrained_layout=True)
+        for ax in [axs]:
+            psm = ax.pcolormesh(voxel[sl], cmap=cmap, rasterized=True, vmin=0, vmax=20)
+            fig.colorbar(psm, ax=ax)
+        plt.savefig('sl{}.png'.format(sl))
+
 
 class Vox3DBuilder(object):
     """
@@ -140,7 +153,7 @@ class Vox3DBuilder(object):
         # Name of the protein (always 4-letter)
         protein_name = ntpath.basename(pdb_path)[0:4]
         # Name of the ligand (3-letter code)
-        ligand_name = ntpath.basename(aux_input_path)[5:8]
+        ligand_name = ntpath.basename(aux_input_path).split('_')[1]
 
         # Read the pdb file
         ppdb = PandasPdb().read_pdb(pdb_path)
@@ -202,6 +215,7 @@ class Vox3DBuilder(object):
         print('\n...Generating pocket voxel representation')
         pocket_voxel = site_voxelization(pocket_grid, N + 1)
         pocket_voxel = np.expand_dims(pocket_voxel, axis=0)
+        #visualize_voxel(pocket_voxel)
         np.save('voxel_'+protein_name+'_'+ligand_name, pocket_voxel)
         return pocket_voxel
 

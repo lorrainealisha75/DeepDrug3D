@@ -98,12 +98,13 @@ def assign_amino_acid(site, selected_coords):
 # main function
 class Grid3DBuilder(object):
     """ Given an align protein, generate the binding grid
-    and calculate the DFIRE potentials """
+    and calculate the amino acids nearest to each coordinate in the binding site """
     @staticmethod
     def build(protein_coords, selected_coords, r, N):
         """
-        Input: protein coordinates, path to the pdb file of the protein, radius, number of points along the radius.
-        Output: dataframe of the binding grid, including coordinates and potentials for different atom types.
+        Input: protein coordinates, selected protein coordinates from the auxiliary file, radius, number of points
+        along the radius.
+        Output: dataframe of the binding grid, including coordinates and amino acid ids.
         """
         print('The radius of the binding grid is: ' + str(r))
         print('\nThe number of points along the diameter is: ' + str(N))
